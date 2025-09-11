@@ -9,6 +9,7 @@ import os
 import random
 import sys
 import traceback
+import json
 from argparse import ArgumentParser
 
 import submitit
@@ -149,12 +150,33 @@ def _override_encoder(cfg, args):
         "force_dtype": args.force_dtype,
         "verbose": args.vit_verbose,
     }
-    # Ensure neck backbone_channel_list matches if out_dims provided
+    # Ensure neck backbone_channel_list matches trunk channels
     if out_dims:
-        if not hasattr(cfg.model.image_encoder.neck, "backbone_channel_list"):
-            cfg.model.image_encoder.neck.backbone_channel_list = out_dims
+        cfg.model.image_encoder.neck.backbone_channel_list = out_dims
+    else:
+        # Try to infer hidden_size from HF config.json so users of distilled models (e.g. 960) need not pass --encoder-out-dims
+        inferred = None
+        try:
+            if os.path.isdir(pretrained):
+                cfg_json = os.path.join(pretrained, "config.json")
+                if os.path.isfile(cfg_json):
+                    with open(cfg_json, "r") as f:
+                        data = json.load(f)
+                    hs = data.get("hidden_size") or data.get("dim")
+                    if isinstance(hs, int) and hs > 0:
+                        inferred = [hs, hs, hs, hs]
+        except Exception:
+            inferred = None
+        if inferred is not None:
+            cfg.model.image_encoder.neck.backbone_channel_list = inferred
         else:
-            cfg.model.image_encoder.neck.backbone_channel_list = out_dims
+            # Fallback: if existing list length==4 keep it but warn
+            bcl = getattr(cfg.model.image_encoder.neck, "backbone_channel_list", None)
+            if bcl is not None:
+                logging.warning(
+                    f"[override_encoder] Could not infer hidden_size for ViT; keeping existing backbone_channel_list={bcl}. "
+                    "If you see a channel mismatch assertion, pass --encoder-out-dims explicitly."
+                )
     cfg.model.image_encoder.trunk = trunk_cfg
     return cfg
 

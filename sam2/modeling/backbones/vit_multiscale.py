@@ -1,3 +1,4 @@
+#把任意 HF ViT（如 DINOv3 / I-JEPA）从单尺度 patch 网格转成四个尺度，接口与 SAM2 的 FPN 对齐。
 import math
 from typing import List, Optional
 
