@@ -120,8 +120,48 @@ def add_pythonpath_to_sys_path():
     sys.path = os.environ["PYTHONPATH"].split(":") + sys.path
 
 
+def _override_encoder(cfg, args):
+    if getattr(args, "encoder_type", None) is None:
+        return cfg
+    et = args.encoder_type.lower()
+    if et == "hiera":
+        return cfg  # no change
+    # Build trunk override
+    pretrained = args.encoder_ckpt if getattr(args, "encoder_ckpt", None) else \
+        ("/path/to/dino" if et == "dino" else "/path/to/ijepa")
+    out_dims = None
+    if args.encoder_out_dims:
+        try:
+            parts = [int(x) for x in args.encoder_out_dims.split(",")]
+            if len(parts) == 4:
+                out_dims = parts
+        except Exception:
+            pass
+    # Navigate to model.image_encoder.trunk; assume structure present
+    trunk_cfg = {
+        "_target_": "sam2.modeling.backbones.vit_multiscale.ViTTrunkMultiScale",
+        "pretrained": pretrained,
+        "encoder_type": et,
+        "out_dims": out_dims,
+        "upsample_mode": args.encoder_upsample_mode,
+        "refine_highres": not args.no_refine_highres,
+        "freeze_vit": args.freeze_vit,
+        "force_dtype": args.force_dtype,
+        "verbose": args.vit_verbose,
+    }
+    # Ensure neck backbone_channel_list matches if out_dims provided
+    if out_dims:
+        if not hasattr(cfg.model.image_encoder.neck, "backbone_channel_list"):
+            cfg.model.image_encoder.neck.backbone_channel_list = out_dims
+        else:
+            cfg.model.image_encoder.neck.backbone_channel_list = out_dims
+    cfg.model.image_encoder.trunk = trunk_cfg
+    return cfg
+
+
 def main(args) -> None:
     cfg = compose(config_name=args.config)
+    cfg = _override_encoder(cfg, args)
     if cfg.launcher.experiment_log_dir is None:
         cfg.launcher.experiment_log_dir = os.path.join(
             os.getcwd(), "sam2_logs", args.config
@@ -264,6 +304,14 @@ if __name__ == "__main__":
         "--num-gpus", type=int, default=None, help="number of GPUS per node"
     )
     parser.add_argument("--num-nodes", type=int, default=None, help="Number of nodes")
+    parser.add_argument("--encoder-type", type=str, default=None, choices=["hiera", "dino", "ijepa"], help="override encoder type")
+    parser.add_argument("--encoder-ckpt", type=str, default=None, help="HF id or local dir for ViT when using dino/ijepa")
+    parser.add_argument("--encoder-out-dims", type=str, default=None, help="Comma list C32,C16,C8,C4 (e.g. 1024,1024,512,256)")
+    parser.add_argument("--encoder-upsample-mode", type=str, default="bilinear", choices=["bilinear", "deconv"], help="upsample strategy for synthetic pyramid")
+    parser.add_argument("--no-refine-highres", action="store_true", help="disable DWConv refine on F4/F8")
+    parser.add_argument("--freeze-vit", action="store_true", help="freeze ViT backbone weights")
+    parser.add_argument("--force-dtype", type=str, default=None, choices=["bf16", "fp16", "fp32"], help="force cast encoder outputs")
+    parser.add_argument("--vit-verbose", action="store_true", help="print synthesized multi-scale shapes once")
     args = parser.parse_args()
     args.use_cluster = bool(args.use_cluster) if args.use_cluster is not None else None
     register_omegaconf_resolvers()
