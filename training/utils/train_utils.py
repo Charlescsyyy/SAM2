@@ -49,18 +49,66 @@ class Phase:
     VAL = "val"
 
 
+def model_from_resolver(arg_string):
+    """Resolver to import values from other config files
+    Usage: ${model_from:config_file.yaml:key.path}
+    """
+    import os
+    from omegaconf import OmegaConf
+    
+    # Parse the argument string
+    parts = arg_string.split(':', 1)
+    if len(parts) != 2:
+        raise ValueError(f"model_from resolver expects format 'file.yaml:key.path', got: {arg_string}")
+    
+    config_name, key_path = parts
+    
+    # Find the config file relative to current working directory
+    config_path = None
+    for root, dirs, files in os.walk('.'):
+        if config_name in files:
+            config_path = os.path.join(root, config_name)
+            break
+    
+    if config_path is None:
+        raise FileNotFoundError(f"Config file {config_name} not found")
+    
+    # Load the config with resolvers registered
+    cfg = OmegaConf.load(config_path)
+    
+    # Navigate to the key path
+    keys = key_path.split('.')
+    value = cfg
+    for key in keys:
+        if key in value:
+            value = value[key]
+        else:
+            raise KeyError(f"Key path {key_path} not found in {config_name}")
+    
+    return value
+
+
 def register_omegaconf_resolvers():
-    OmegaConf.register_new_resolver("get_method", hydra.utils.get_method)
-    OmegaConf.register_new_resolver("get_class", hydra.utils.get_class)
-    OmegaConf.register_new_resolver("add", lambda x, y: x + y)
-    OmegaConf.register_new_resolver("times", multiply_all)
-    OmegaConf.register_new_resolver("divide", lambda x, y: x / y)
-    OmegaConf.register_new_resolver("pow", lambda x, y: x**y)
-    OmegaConf.register_new_resolver("subtract", lambda x, y: x - y)
-    OmegaConf.register_new_resolver("range", lambda x: list(range(x)))
-    OmegaConf.register_new_resolver("int", lambda x: int(x))
-    OmegaConf.register_new_resolver("ceil_int", lambda x: int(math.ceil(x)))
-    OmegaConf.register_new_resolver("merge", lambda *x: OmegaConf.merge(*x))
+    # Helper function to safely register resolvers
+    def safe_register(name, resolver):
+        try:
+            OmegaConf.register_new_resolver(name, resolver)
+        except AssertionError:
+            # Resolver already exists, skip
+            pass
+    
+    safe_register("get_method", hydra.utils.get_method)
+    safe_register("get_class", hydra.utils.get_class)
+    safe_register("add", lambda x, y: x + y)
+    safe_register("times", multiply_all)
+    safe_register("divide", lambda x, y: x / y)
+    safe_register("pow", lambda x, y: x**y)
+    safe_register("subtract", lambda x, y: x - y)
+    safe_register("range", lambda x: list(range(x)))
+    safe_register("int", lambda x: int(x))
+    safe_register("ceil_int", lambda x: int(math.ceil(x)))
+    safe_register("merge", lambda *x: OmegaConf.merge(*x))
+    safe_register("model_from", model_from_resolver)
 
 
 def setup_distributed_backend(backend, timeout_mins):
