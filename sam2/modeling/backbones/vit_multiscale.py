@@ -104,6 +104,14 @@ class ViTTrunkMultiScale(nn.Module):
         self.proj8 = self._make_proj(self.c16, self.c8)
         self.proj4 = self._make_proj(self.c8, self.c4)
 
+        # Pre-create the F16->F32 downsampler so it exists in state_dict for checkpoint loading
+        # This avoids "unexpected key" errors when resuming from checkpoints that saved it.
+        down_key = f"_down_{self.c16}_{self.c32}"
+        if not hasattr(self, down_key):
+            layer = nn.Conv2d(self.c16, self.c32, 3, 2, 1, bias=False)
+            nn.init.kaiming_normal_(layer.weight, mode="fan_out", nonlinearity="relu")
+            setattr(self, down_key, layer)
+
         if self.refine_highres:
             self.refine8 = DepthwiseSeparable(self.c8)
             self.refine4 = DepthwiseSeparable(self.c4)
@@ -283,6 +291,7 @@ class ViTTrunkMultiScale(nn.Module):
         """
         key = f"_down_{cin}_{cout}"
         if not hasattr(self, key):
+            # Fallback for unusual configs; usually created in __init__
             layer = nn.Conv2d(cin, cout, 3, 2, 1, bias=False)
             nn.init.kaiming_normal_(layer.weight, mode="fan_out", nonlinearity="relu")
             setattr(self, key, layer)
