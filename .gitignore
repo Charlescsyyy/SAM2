@@ -10,3 +10,6 @@ outputs/*
 checkpoints/*.pt
 demo/backend/checkpoints/*.pt
 checkpoints/
+LoveDA/
+sam2_logs/
+OpenEarthMap/
