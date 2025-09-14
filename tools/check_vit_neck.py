@@ -2,26 +2,36 @@ import os, argparse, torch
 from sam2.build_sam import build_sam2
 
 """
-使用说明:
-1. 默认用已存在的 Hiera-L 配置验证脚手架是否可运行。
-2. 如果你后来创建了 ViT 配置 (例如 configs/sam2/sam2_vit_dino_l16.yaml)，运行时加:
-   python tools/check_vit_neck.py --config configs/sam2/sam2_vit_dino_l16.yaml
-3. 仅此脚本被修改；不改动其他源码。
+使用说明 (统一到 sam2.1 命名空间):
+1) 默认使用 sam2.1 的 Hiera-L 配置，快速检查搭建是否正常:
+    python tools/check_vit_neck.py
+2) 若要检查你新增的 ViT 配置，请传 sam2.1 路径，例如:
+    python tools/check_vit_neck.py --config configs/sam2.1/sam2_vit_dino.yaml
+    或
+    python tools/check_vit_neck.py --config configs/sam2.1/sam2_vit_ijepa.yaml
+3) 本脚本只读配置并打印 trunk/neck 维度与 FPN 输出，不改动其他源码。
 """
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", type=str, default="configs/sam2/sam2_hiera_l.yaml",
-                    help="Hydra 配置名 (已存在的配置，如 Hiera-L；或你新增的 ViT 配置)")
+    ap.add_argument(
+        "--config",
+        type=str,
+        default="configs/sam2.1/sam2.1_hiera_l.yaml",
+        help="Hydra 配置路径 (推荐 sam2.1 命名空间: 如 configs/sam2.1/sam2_vit_dino.yaml)",
+    )
     ap.add_argument("--ckpt", type=str, default=None, help="可选 checkpoint 路径")
     ap.add_argument("--size", type=int, default=640, help="测试输入尺寸 (需为16的倍数)")
     args = ap.parse_args()
 
     cfg_path = args.config
-    # 这里只做存在性提示；Hydra 会在其搜索路径下解析 configs/sam2/... 
+    # 仅做存在性提示；Hydra 会按包内搜索路径解析 configs/... 
     local_fs_path = os.path.join(os.getcwd(), cfg_path)
     if not os.path.exists(local_fs_path) and not cfg_path.endswith("hiera_l.yaml"):
-        print(f"[WARN] 本地未找到 {local_fs_path} (如果这是打包内置路径可忽略; 若你期望的是新建的 ViT YAML, 请先创建)")
+        print(
+            f"[WARN] 本地未找到 {local_fs_path}. 如果这是包内置路径可忽略；"
+            f"若你期望的是新建的 ViT YAML，请将其放到 configs/sam2.1/ 并传入该路径。"
+        )
 
     model = build_sam2(cfg_path, args.ckpt)
     enc = model.image_encoder
