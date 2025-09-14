@@ -127,6 +127,18 @@ def _override_encoder(cfg, args):
     et = args.encoder_type.lower()
     if et == "hiera":
         return cfg  # no change
+    # Determine whether we're working with training config (trainer.model) or inference config (model)
+    model_root = None
+    try:
+        if "model" in cfg:
+            model_root = cfg.model
+        elif "trainer" in cfg and "model" in cfg.trainer:
+            model_root = cfg.trainer.model
+    except Exception:
+        model_root = None
+    if model_root is None:
+        logging.warning("[override_encoder] Could not locate model root in config; skip ViT override.")
+        return cfg
     # Build trunk override
     pretrained = args.encoder_ckpt if getattr(args, "encoder_ckpt", None) else \
         ("/path/to/dino" if et == "dino" else "/path/to/ijepa")
@@ -149,10 +161,11 @@ def _override_encoder(cfg, args):
         "freeze_vit": args.freeze_vit,
         "force_dtype": args.force_dtype,
         "verbose": args.vit_verbose,
+    "resize_fallback": getattr(args, "vit_resize_fallback", False),
     }
     # Ensure neck backbone_channel_list matches trunk channels
     if out_dims:
-        cfg.model.image_encoder.neck.backbone_channel_list = out_dims
+        model_root.image_encoder.neck.backbone_channel_list = out_dims
     else:
         # Try to infer hidden_size from HF config.json so users of distilled models (e.g. 960) need not pass --encoder-out-dims
         inferred = None
@@ -168,16 +181,16 @@ def _override_encoder(cfg, args):
         except Exception:
             inferred = None
         if inferred is not None:
-            cfg.model.image_encoder.neck.backbone_channel_list = inferred
+            model_root.image_encoder.neck.backbone_channel_list = inferred
         else:
             # Fallback: if existing list length==4 keep it but warn
-            bcl = getattr(cfg.model.image_encoder.neck, "backbone_channel_list", None)
+            bcl = getattr(model_root.image_encoder.neck, "backbone_channel_list", None)
             if bcl is not None:
                 logging.warning(
                     f"[override_encoder] Could not infer hidden_size for ViT; keeping existing backbone_channel_list={bcl}. "
                     "If you see a channel mismatch assertion, pass --encoder-out-dims explicitly."
                 )
-    cfg.model.image_encoder.trunk = trunk_cfg
+    model_root.image_encoder.trunk = trunk_cfg
     return cfg
 
 
@@ -334,6 +347,7 @@ if __name__ == "__main__":
     parser.add_argument("--freeze-vit", action="store_true", help="freeze ViT backbone weights")
     parser.add_argument("--force-dtype", type=str, default=None, choices=["bf16", "fp16", "fp32"], help="force cast encoder outputs")
     parser.add_argument("--vit-verbose", action="store_true", help="print synthesized multi-scale shapes once")
+    parser.add_argument("--vit-resize-fallback", action="store_true", help="allow auto-resize to model image_size when ViT backend enforces strict input size (e.g., I-JEPA)")
     args = parser.parse_args()
     args.use_cluster = bool(args.use_cluster) if args.use_cluster is not None else None
     register_omegaconf_resolvers()

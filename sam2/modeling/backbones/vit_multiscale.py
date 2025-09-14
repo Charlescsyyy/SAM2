@@ -73,6 +73,7 @@ class ViTTrunkMultiScale(nn.Module):
         freeze_vit: bool = False,
         force_dtype: Optional[str] = None,  # one of None|bf16|fp16|fp32
         verbose: bool = False,
+        resize_fallback: bool = False,  # if True, auto-resize to model image_size when strict models (e.g., I-JEPA) enforce it
     ):
         super().__init__()
         assert AutoModel is not None, "transformers not available. Please install transformers package."
@@ -87,6 +88,7 @@ class ViTTrunkMultiScale(nn.Module):
         self.freeze_vit = freeze_vit
         self.force_dtype = force_dtype
         self.verbose = verbose
+        self.resize_fallback = resize_fallback
 
         if out_dims is None:
             # default keep all same
@@ -143,8 +145,28 @@ class ViTTrunkMultiScale(nn.Module):
         assert H % patch == 0 and W % patch == 0, f"Input shape ({H},{W}) not divisible by patch size {patch}"
         # HF ViT expects keyword pixel_values
         with torch.set_grad_enabled(not self.freeze_vit):
-            vit_out = self.vit(pixel_values=pixel_values, return_dict=True)
-            tokens = vit_out.last_hidden_state  # [B, S(+cls), D]
+            did_resize = False
+            try:
+                vit_out = self.vit(pixel_values=pixel_values, return_dict=True)
+                tokens = vit_out.last_hidden_state  # [B, S(+cls), D]
+            except ValueError:
+                if not self.resize_fallback:
+                    raise
+                # Attempt fallback: some models (e.g., I-JEPA) strictly enforce config.image_size
+                imsz = getattr(self.vit.config, "image_size", None)
+                if isinstance(imsz, int):
+                    tgtH = tgtW = imsz
+                elif isinstance(imsz, (list, tuple)) and len(imsz) == 2:
+                    tgtH, tgtW = imsz
+                else:
+                    raise
+                if (H, W) != (tgtH, tgtW):
+                    resized = F.interpolate(pixel_values, size=(tgtH, tgtW), mode="bilinear", align_corners=False)
+                    vit_out = self.vit(pixel_values=resized, return_dict=True)
+                    tokens = vit_out.last_hidden_state
+                    did_resize = True
+                else:
+                    raise
 
         patches, _ = _split_cls_and_patches(tokens)
         N = patches.shape[1]
@@ -182,9 +204,21 @@ class ViTTrunkMultiScale(nn.Module):
             )
             self._printed = True
 
+        # If we resized input during fallback, upsample synthesized features back to original scale
+        if self.resize_fallback and 'did_resize' in locals() and did_resize:
+            # compute scale factors relative to h16 grid to preserve strides
+            # upscale each level to match intended strides at (H,W)
+            def _resz(x, stride):
+                th, tw = int(round(H / stride)), int(round(W / stride))
+                return F.interpolate(x, size=(th, tw), mode="bilinear", align_corners=False)
+            f4 = _resz(f4, 4)
+            f8 = _resz(f8, 8)
+            f16 = _resz(f16, 16)
+            f32 = _resz(f32, 32)
+
         # Order required by ImageEncoder -> FpnNeck pipeline: high resolution first
         # Our channel_list is low→high so neck.assert still passes
-        return [f4, f8, f16, f32]
+        return [f4, f8, f16, f32] #顺序高到低
 
     def _get_downsample_weight(self, cin, cout):
         # Create or cache a simple conv weight (3x3 depthwise+pointwise collapsed into single conv). Simplicity first.
