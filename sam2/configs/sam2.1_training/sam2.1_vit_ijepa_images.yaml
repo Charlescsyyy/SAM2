@@ -84,7 +84,7 @@ trainer:
           scale: null
           temperature: 10000
         d_model: 256
-        backbone_channel_list: [1024, 1024, 1024, 1024]
+        backbone_channel_list: [1408, 1408, 1408, 1408]
         fpn_top_down_levels: [0, 1]
         fpn_interp_model: nearest
 
