@@ -33,7 +33,29 @@ class ImageEncoder(nn.Module):
             # Discard the lowest resolution features
             features, pos = features[: -self.scalp], pos[: -self.scalp]
 
-        src = features[-1]
+
+        # Remove levels coarser than stride-16 so that top level is >= stride-16
+        H, W = sample.shape[-2], sample.shape[-1]
+        tgt_h, tgt_w = H // 16, W // 16
+        keep_idx = [i for i, feat in enumerate(features) if feat.shape[-2] >= tgt_h and feat.shape[-1] >= tgt_w]
+        if len(keep_idx) != len(features):
+            features = [features[i] for i in keep_idx]
+            pos = [pos[i] for i in keep_idx]
+
+        # Select stride-16 feature map for SAM image embedding (robust to off-by-one)
+        src_idx = None
+        for i, feat in enumerate(features):
+            if feat.shape[-2] == tgt_h and feat.shape[-1] == tgt_w:
+                src_idx = i
+                break
+        if src_idx is None:
+            # choose the level closest to target grid size
+            diffs = [abs(feat.shape[-2] - tgt_h) + abs(feat.shape[-1] - tgt_w) for feat in features]
+            src_idx = int(min(range(len(features)), key=lambda k: diffs[k]))
+        src = features[src_idx]
+        if src.shape[-2] != tgt_h or src.shape[-1] != tgt_w:
+            # interpolate to exact size expected by SAM heads
+            src = F.interpolate(src, size=(tgt_h, tgt_w), mode="bilinear", align_corners=False)
         output = {
             "vision_features": src,
             "vision_pos_enc": pos,

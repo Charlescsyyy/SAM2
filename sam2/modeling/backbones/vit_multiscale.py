@@ -227,7 +227,11 @@ class ViTTrunkMultiScale(nn.Module):
         f16 = self.proj16(feat16)  # (B, C16, h16, h16)
 
         # F32 (downsample)
-        f32 = F.conv2d(f16, weight=self._get_downsample_weight(self.c16, self.c32), stride=2, padding=1)
+        down = self._get_downsampler(self.c16, self.c32, device=f16.device)
+        if f16.dtype != down.weight.dtype:
+            f32 = down(f16.to(down.weight.dtype)).to(f16.dtype)
+        else:
+            f32 = down(f16)
         # F8 (upsample)
         f8 = self._upsample(f16, 2)
         f8 = self.proj8(f8)
@@ -271,11 +275,16 @@ class ViTTrunkMultiScale(nn.Module):
         # Our channel_list is low→high so neck.assert still passes
         return [f4, f8, f16, f32] #顺序高到低
 
-    def _get_downsample_weight(self, cin, cout):
-        # Create or cache a simple conv weight (3x3 depthwise+pointwise collapsed into single conv). Simplicity first.
-        key = f"_dw_weight_{cin}_{cout}"
+    def _get_downsampler(self, cin, cout, device):
+        """
+        Create/cache a Conv2d downsampler module and move it to the right device.
+        Keep weights in their original dtype (typically fp32) to play well with AMP,
+        and handle input dtype casting at call site.
+        """
+        key = f"_down_{cin}_{cout}"
         if not hasattr(self, key):
             layer = nn.Conv2d(cin, cout, 3, 2, 1, bias=False)
             nn.init.kaiming_normal_(layer.weight, mode="fan_out", nonlinearity="relu")
             setattr(self, key, layer)
-        return getattr(self, key).weight
+        layer = getattr(self, key)
+        return layer.to(device=device)

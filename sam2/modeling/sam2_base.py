@@ -303,6 +303,17 @@ class SAM2Base(torch.nn.Module):
         """
         B = backbone_features.size(0)
         device = backbone_features.device
+        # Robustly enforce expected spatial size for SAM image embedding
+        if (
+            backbone_features.size(2) != self.sam_image_embedding_size
+            or backbone_features.size(3) != self.sam_image_embedding_size
+        ):
+            backbone_features = F.interpolate(
+                backbone_features,
+                size=(self.sam_image_embedding_size, self.sam_image_embedding_size),
+                mode="bilinear",
+                align_corners=False,
+            )
         assert backbone_features.size(1) == self.sam_prompt_embed_dim
         assert backbone_features.size(2) == self.sam_image_embedding_size
         assert backbone_features.size(3) == self.sam_image_embedding_size
