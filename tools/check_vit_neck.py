@@ -1,5 +1,8 @@
 import os, argparse, torch
+from omegaconf import OmegaConf
+from hydra.utils import instantiate
 from sam2.build_sam import build_sam2
+from training.utils.train_utils import register_omegaconf_resolvers
 
 """
 使用说明 (统一到 sam2.1 命名空间):
@@ -13,6 +16,11 @@ from sam2.build_sam import build_sam2
 """
 
 def main():
+    # Register resolvers so ${model_from:...} etc. work in plain scripts
+    try:
+        register_omegaconf_resolvers()
+    except Exception:
+        pass
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--config",
@@ -34,6 +42,19 @@ def main():
         )
 
     model = build_sam2(cfg_path, args.ckpt)
+    # Fallback: if build_sam2 returned a config (unexpected), instantiate manually
+    if not hasattr(model, "image_encoder"):
+        try:
+            # Try direct YAML load and instantiate
+            cfg = OmegaConf.load(os.path.join(os.getcwd(), cfg_path))
+        except FileNotFoundError:
+            # Try package configs
+            import sam2 as sam2_pkg
+
+            pkg_cfg = os.path.join(sam2_pkg.__path__[0], "configs", cfg_path)
+            cfg = OmegaConf.load(pkg_cfg)
+        OmegaConf.resolve(cfg)
+        model = instantiate(cfg.model, _recursive_=True)
     enc = model.image_encoder
 
     print(f"Loaded config: {cfg_path}")
@@ -45,7 +66,8 @@ def main():
     x = torch.zeros(1, 3, H, W)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     x = x.to(device)
-    model.to(device)
+    if hasattr(model, "to"):
+        model.to(device)
 
     with torch.inference_mode():
         xs = enc.trunk(x)

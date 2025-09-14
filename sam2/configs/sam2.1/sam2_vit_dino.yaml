@@ -4,7 +4,7 @@ model:
     _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
     trunk:
       _target_: sam2.modeling.backbones.vit_multiscale.ViTTrunkMultiScale
-      pretrained: /path/to/dinov3_vit_l16_or_224m_dir   # HF id or local dir
+      pretrained: /home/jyu197/DIWork/dinov3/pretrained/dinov3-vitl16-pretrain-sat493m   # HF id or local dir
       encoder_type: dino
       out_dims: null            # null => [D,D,D,D]
       upsample_mode: bilinear   # bilinear|deconv

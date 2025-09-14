@@ -61,9 +61,88 @@ trainer:
 
   model:
     _target_: training.model.sam2.SAM2Train
-    image_encoder: ${model_from:sam2_vit_dino.yaml:model.image_encoder}
-    memory_attention: ${model_from:sam2_hiera_l.yaml:model.memory_attention}
-    memory_encoder: ${model_from:sam2_hiera_l.yaml:model.memory_encoder}
+    image_encoder:
+      _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
+      trunk:
+        _target_: sam2.modeling.backbones.vit_multiscale.ViTTrunkMultiScale
+        pretrained: /home/jyu197/DIWork/dinov3/pretrained/dinov3-vitl16-pretrain-sat493m
+        encoder_type: dino
+        out_dims: null
+        upsample_mode: bilinear
+        refine_highres: true
+        freeze_vit: false
+        force_dtype: null
+        verbose: false
+      neck:
+        _target_: sam2.modeling.backbones.image_encoder.FpnNeck
+        position_encoding:
+          _target_: sam2.modeling.position_encoding.PositionEmbeddingSine
+          num_pos_feats: 256
+          normalize: true
+          scale: null
+          temperature: 10000
+        d_model: 256
+        backbone_channel_list: [1024, 1024, 1024, 1024]
+        fpn_top_down_levels: [0, 1]
+        fpn_interp_model: nearest
+
+    memory_attention:
+      _target_: sam2.modeling.memory_attention.MemoryAttention
+      d_model: 256
+      pos_enc_at_input: true
+      layer:
+        _target_: sam2.modeling.memory_attention.MemoryAttentionLayer
+        activation: relu
+        dim_feedforward: 2048
+        dropout: 0.1
+        pos_enc_at_attn: false
+        self_attention:
+          _target_: sam2.modeling.sam.transformer.RoPEAttention
+          rope_theta: 10000.0
+          feat_sizes: [64, 64]
+          embedding_dim: 256
+          num_heads: 1
+          downsample_rate: 1
+          dropout: 0.1
+        d_model: 256
+        pos_enc_at_cross_attn_keys: true
+        pos_enc_at_cross_attn_queries: false
+        cross_attention:
+          _target_: sam2.modeling.sam.transformer.RoPEAttention
+          rope_theta: 10000.0
+          feat_sizes: [64, 64]
+          rope_k_repeat: True
+          embedding_dim: 256
+          num_heads: 1
+          downsample_rate: 1
+          dropout: 0.1
+          kv_in_dim: 64
+      num_layers: 4
+
+    memory_encoder:
+      _target_: sam2.modeling.memory_encoder.MemoryEncoder
+      out_dim: 64
+      position_encoding:
+        _target_: sam2.modeling.position_encoding.PositionEmbeddingSine
+        num_pos_feats: 64
+        normalize: true
+        scale: null
+        temperature: 10000
+      mask_downsampler:
+        _target_: sam2.modeling.memory_encoder.MaskDownSampler
+        kernel_size: 3
+        stride: 2
+        padding: 1
+      fuser:
+        _target_: sam2.modeling.memory_encoder.Fuser
+        layer:
+          _target_: sam2.modeling.memory_encoder.CXBlock
+          dim: 256
+          kernel_size: 7
+          padding: 3
+          layer_scale_init_value: 1e-6
+          use_dwconv: True
+        num_layers: 2
 
     num_maskmem: 7
     image_size: ${scratch.resolution}
