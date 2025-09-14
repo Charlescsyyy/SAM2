@@ -118,6 +118,57 @@ class ViTTrunkMultiScale(nn.Module):
         # Flag to print shapes only once
         self._printed = False
 
+    # --- APIs required by training.optimizer.layer_decay_param_modifier ---
+    def get_num_layers(self) -> int:
+        """
+        Return the number of transformer layers for layer-wise LR decay.
+        We consult the underlying HF model config; fallback to typical naming.
+        """
+        # Common HF ViT families expose num_hidden_layers or depth
+        n = getattr(self.vit.config, "num_hidden_layers", None)
+        if n is None:
+            n = getattr(self.vit.config, "depth", None)
+        if n is None:
+            # Fallback: try to infer from encoder blocks
+            blocks = getattr(getattr(self.vit, "encoder", None), "layer", None)
+            if blocks is not None:
+                try:
+                    n = len(blocks)
+                except Exception:
+                    n = None
+        if n is None:
+            # Conservative default for ViT-L/16
+            n = 24
+        return int(n)
+
+    def get_layer_id(self, layer_name: str) -> int:
+        """
+        Map a parameter name to a layer index in [0, num_layers].
+        This is used by layer-wise LR decay; we attempt to parse common HF param names.
+        """
+        num_layers = self.get_num_layers()
+        # Typical HF naming patterns include: encoder.layer.<i>., blocks.<i>., layer.<i>.
+        import re
+        patterns = [
+            r"encoder\.layer\.(\d+)\.",
+            r"layers?\.(\d+)\.",
+            r"blocks?\.(\d+)\.",
+        ]
+        for pat in patterns:
+            m = re.search(pat, layer_name)
+            if m:
+                try:
+                    idx = int(m.group(1))
+                    # Clamp to range [0, num_layers]
+                    return max(0, min(idx, num_layers))
+                except Exception:
+                    pass
+        # Embeddings / cls / patch proj: treat as layer 0 (closest to input)
+        if any(k in layer_name for k in ["embeddings", "patch_embed", "pos_embed", "cls_token", "position_embeddings"]):
+            return 0
+        # Otherwise assign to the last layer bucket
+        return num_layers
+
     @staticmethod
     def _make_proj(cin, cout):
         if cin == cout:
