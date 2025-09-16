@@ -347,7 +347,7 @@ trainer:
 launcher:
   num_nodes: 1
   gpus_per_node: 1
-  experiment_log_dir: /home/jyu197/DIWork/sam2/sam2_logs/oem_vit_dino_run_002
+  experiment_log_dir: /home/jyu197/DIWork/sam2/sam2_logs/oem_vit_dino_run_003
 
 submitit:
   partition: null
