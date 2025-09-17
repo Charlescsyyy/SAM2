@@ -337,7 +337,7 @@ trainer:
 launcher:
   num_nodes: 1
   gpus_per_node: 1
-  experiment_log_dir: /home/jyu197/DIWork/sam2/sam2_logs/dinoUnfreeze_run_train_val
+  experiment_log_dir: /home/jyu197/DIWork/sam2/sam2_logs/ijepaUnfreeze_run_train_val
 
 submitit:
   partition: null
