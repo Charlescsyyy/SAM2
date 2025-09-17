@@ -12,6 +12,7 @@ import numpy as np
 import torch
 from PIL import Image
 from sam2.build_sam import build_sam2_video_predictor
+# from training.utils.train_utils import register_omegaconf_resolvers
 
 
 # the PNG palette for DAVIS 2017 dataset
@@ -365,6 +366,13 @@ def vos_separate_inference_per_object(
 
 
 def main():
+    # # Ensure custom OmegaConf resolvers (e.g. ${times:...}) are available before
+    # # Hydra parses any config files referenced below.
+    # try:
+    #     register_omegaconf_resolvers()
+    # except Exception:
+    #     pass
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--sam2_cfg",

@@ -15,7 +15,8 @@ dataset:
   # ★ 指向你整理后的 oem_sam2_fmt
   img_folder: /home/jyu197/DIWork/sam2/OpenEarthMap/OpenEarthMap/oem_sam2_fmt/images
   gt_folder:  /home/jyu197/DIWork/sam2/OpenEarthMap/OpenEarthMap/oem_sam2_fmt/masks
-  file_list_txt: /home/jyu197/DIWork/sam2/OpenEarthMap/OpenEarthMap/oem_sam2_fmt/file_list.txt
+  file_list_train_txt: /home/jyu197/DIWork/sam2/OpenEarthMap/OpenEarthMap/oem_sam2_fmt/file_list_train.txt
+  file_list_val_txt:   /home/jyu197/DIWork/sam2/OpenEarthMap/OpenEarthMap/oem_sam2_fmt/file_list_val.txt
   multiplier: 1                 # ★ 图片=1帧，建议先用1
 
 # Video transforms（保留）
@@ -56,7 +57,7 @@ vos:
 
 trainer:
   _target_: training.trainer.Trainer
-  mode: train_only
+  mode: train
   max_epochs: '${times:${scratch.num_epochs},${scratch.phases_per_epoch}}'
   accelerator: cuda
   seed_value: 123
@@ -207,7 +208,7 @@ trainer:
                   _target_: training.dataset.vos_raw_dataset.PNGRawDataset
                   img_folder: ${dataset.img_folder}
                   gt_folder:  ${dataset.gt_folder}
-                  file_list_txt: ${dataset.file_list_txt}
+                  file_list_txt: ${dataset.file_list_train_txt}
                 sampler:
                   _target_: training.dataset.vos_sampler.RandomUniformSampler
                   num_frames: ${scratch.num_frames}      # ★ 1
@@ -221,6 +222,33 @@ trainer:
         _target_: training.utils.data_utils.collate_fn
         _partial_: true
         dict_key: all
+
+    val:
+      _target_: training.dataset.sam2_datasets.TorchTrainMixedDataset
+      shuffle: False
+      batch_sizes:
+        - ${scratch.train_batch_size}
+      datasets:
+        - _target_: training.dataset.vos_dataset.VOSDataset
+          training: false
+          transforms: ${vos.train_transforms}
+          video_dataset:
+            _target_: training.dataset.vos_raw_dataset.PNGRawDataset
+            img_folder: ${dataset.img_folder}
+            gt_folder:  ${dataset.gt_folder}
+            file_list_txt: ${dataset.file_list_val_txt}
+          sampler:
+            _target_: training.dataset.vos_sampler.RandomUniformSampler
+            num_frames: ${scratch.num_frames}
+            max_num_objects: ${scratch.max_num_objects}
+          multiplier: ${dataset.multiplier}
+      num_workers: ${scratch.num_train_workers}
+      pin_memory: True
+      drop_last: False
+      collate_fn:
+        _target_: training.utils.data_utils.collate_fn
+        _partial_: true
+        dict_key: val
 
   optim:
     amp:
@@ -262,7 +290,7 @@ trainer:
           module_cls_names: ['torch.nn.LayerNorm']
 
   loss:
-    all:
+    all: &loss_cfg
       _target_: training.loss_fns.MultiStepMultiMasksAndIous
       weight_dict:
         loss_mask: 20
@@ -274,6 +302,7 @@ trainer:
       pred_obj_scores: true
       focal_gamma_obj_score: 0.0
       focal_alpha_obj_score: -1.0
+    val: *loss_cfg
 
   distributed:
     backend: nccl
@@ -306,7 +335,7 @@ trainer:
 launcher:
   num_nodes: 1
   gpus_per_node: 1             # ★ 按你实际GPU数修改
-  experiment_log_dir: /home/jyu197/DIWork/sam2/sam2_logs/oem_run_001
+  experiment_log_dir: /home/jyu197/DIWork/sam2/sam2_logs/hieraUnfreeze_run_train_val
  # 可改绝对路径
 
 submitit:

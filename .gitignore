@@ -13,3 +13,5 @@ checkpoints/
 LoveDA/
 sam2_logs/
 OpenEarthMap/
+Testdata/
+Testdata_sam2_perimg
