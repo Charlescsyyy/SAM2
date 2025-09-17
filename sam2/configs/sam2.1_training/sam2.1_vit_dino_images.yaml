@@ -14,8 +14,8 @@ scratch:
 dataset:
   img_folder: /home/jyu197/DIWork/sam2/OpenEarthMap/OpenEarthMap/oem_sam2_fmt/images
   gt_folder:  /home/jyu197/DIWork/sam2/OpenEarthMap/OpenEarthMap/oem_sam2_fmt/masks
-  file_list_txt: /home/jyu197/DIWork/sam2/OpenEarthMap/OpenEarthMap/oem_sam2_fmt/file_list_train.txt
-  val_file_list_txt: /home/jyu197/DIWork/sam2/OpenEarthMap/OpenEarthMap/oem_sam2_fmt/file_list_val.txt
+  file_list_train_txt: /home/jyu197/DIWork/sam2/OpenEarthMap/OpenEarthMap/oem_sam2_fmt/file_list_train.txt
+  file_list_val_txt:   /home/jyu197/DIWork/sam2/OpenEarthMap/OpenEarthMap/oem_sam2_fmt/file_list_val.txt
   multiplier: 1
 
 vos:
@@ -206,7 +206,7 @@ trainer:
                   _target_: training.dataset.vos_raw_dataset.PNGRawDataset
                   img_folder: ${dataset.img_folder}
                   gt_folder:  ${dataset.gt_folder}
-                  file_list_txt: ${dataset.file_list_txt}
+                  file_list_txt: ${dataset.file_list_train_txt}
                 sampler:
                   _target_: training.dataset.vos_sampler.RandomUniformSampler
                   num_frames: ${scratch.num_frames}
@@ -238,7 +238,7 @@ trainer:
                   _target_: training.dataset.vos_raw_dataset.PNGRawDataset
                   img_folder: ${dataset.img_folder}
                   gt_folder:  ${dataset.gt_folder}
-                  file_list_txt: ${dataset.val_file_list_txt}
+                  file_list_txt: ${dataset.file_list_val_txt}
                 sampler:
                   _target_: training.dataset.vos_sampler.RandomUniformSampler
                   num_frames: ${scratch.num_frames}
@@ -293,7 +293,7 @@ trainer:
           module_cls_names: ['torch.nn.LayerNorm']
 
   loss:
-    all:
+    all: &loss_cfg
       _target_: training.loss_fns.MultiStepMultiMasksAndIous
       weight_dict:
         loss_mask: 20
@@ -305,18 +305,7 @@ trainer:
       pred_obj_scores: true
       focal_gamma_obj_score: 0.0
       focal_alpha_obj_score: -1.0
-    val:
-      _target_: training.loss_fns.MultiStepMultiMasksAndIous
-      weight_dict:
-        loss_mask: 20
-        loss_dice: 1
-        loss_iou: 1
-        loss_class: 1
-      supervise_all_iou: true
-      iou_use_l1_loss: true
-      pred_obj_scores: true
-      focal_gamma_obj_score: 0.0
-      focal_alpha_obj_score: -1.0
+    val: *loss_cfg
 
   distributed:
     backend: nccl
@@ -347,7 +336,7 @@ trainer:
 launcher:
   num_nodes: 1
   gpus_per_node: 1
-  experiment_log_dir: /home/jyu197/DIWork/sam2/sam2_logs/oem_vit_dino_run_003
+  experiment_log_dir: /home/jyu197/DIWork/sam2/sam2_logs/dinoUnfreeze_run_train_val
 
 submitit:
   partition: null
